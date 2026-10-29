@@ -1,0 +1,1024 @@
+<!doctype html>
+<!-- ============================================================
+  音読チェック（英文はGoogleスプレッドシートから読み込みます）
+
+  ▼ 最初に1回だけ：下の ONDOKU_SHEET_URL の " " の中に、
+    英文を書いたスプレッドシートのURLを貼り付けてください。
+    （スプレッドシートは「共有」→「リンクを知っている全員」→「閲覧者」にしておく）
+
+  ▼ スプレッドシートの書き方
+    A1 … セットの名前（例：Unit 5 音読）
+    A2 から下 … 英文を1つのセルに1つ（段落をまとめて1つのセルに入れてもOK）
+
+  ※ スプレッドシートを読み込めなかったときは、下の ONDOKU_SENTENCES の英文を使います。
+============================================================ -->
+<script>
+// ---------- ここから ----------
+var ONDOKU_SHEET_URL = "https://docs.google.com/spreadsheets/d/103iIrcjkTOxzlmYQt66fH82uUDys-kBmSmPdFIJpV3c/edit?gid=1582440865#gid=1582440865";
+var ONDOKU_TITLE = "音読チェック";
+var ONDOKU_SENTENCES = [
+  "I have lived in this town for ten years.",
+  "Have you ever been to Kyoto?",
+  "This is the book that I bought yesterday.",
+  "The boy who is running over there is my brother.",
+  "It is important for us to help each other.",
+  "I want to know what you are doing now."
+];
+// ---------- ここまで ----------
+</script>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>音読チェック</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fredoka:wght@600;700&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+/* 「ステージ」の考え方：上に紺色のステージ（タイトルと進み具合）、中央に台本カード、その下に大きな録音ボタン、結果はスコアリング */
+:root {
+  --bg: #f1f3fa;
+  --card: #ffffff;
+  --ink: #17213d;
+  --muted: #5b6584;
+  --line: #dde2f0;
+  --brand: #3343c4;
+  --brand-soft: #e7eafc;
+  --on-brand: #ffffff;
+  --stage: #1b2457;
+  --on-stage: #ffffff;
+  --stage-muted: #b9c1ec;
+  --sun: #ffc93c;
+  --on-sun: #17213d;
+  --ok: #18915a;
+  --miss: #e0464b;
+  --miss-soft: #fde6e6;
+  --on-miss: #ffffff;
+  --marker: #ffc93c;
+  --font-ja: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --font-en: "Atkinson Hyperlegible", "Segoe UI", Arial, sans-serif;
+  --font-fun: "Fredoka", "M PLUS Rounded 1c", "Arial Rounded MT Bold", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1428; --card: #182042; --ink: #e8ecfa; --muted: #9aa3c4; --line: #2a3360;
+    --brand: #93a0ff; --brand-soft: #232c5e; --on-brand: #0f1428;
+    --stage: #232d6b; --on-stage: #ffffff; --stage-muted: #b9c1ec;
+    --sun: #ffcf4a; --on-sun: #17213d;
+    --ok: #4fd69a; --miss: #ff6b6b; --miss-soft: #3f2230; --on-miss: #ffffff; --marker: #ffcf4a;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-ja); font-size: 16px; line-height: 1.7;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 48px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: grid; gap: 18px; }
+button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+:is(button, input, textarea):focus-visible { outline: 3px solid var(--marker); outline-offset: 2px; }
+
+/* ---- ステージ（ヘッダー） ---- */
+.stage {
+  background: var(--stage); color: var(--on-stage);
+  border-radius: 22px; padding: 18px 20px 16px;
+  display: grid; gap: 10px; position: relative; overflow: hidden;
+}
+.stage::before {   /* スポットライト */
+  content: ""; position: absolute; inset: -40% -10% auto auto; width: 70%; height: 180%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--sun) 28%, transparent), transparent);
+  pointer-events: none;
+}
+.stage > * { position: relative; }
+.stage .eyebrow { font-family: var(--font-fun); font-weight: 600; letter-spacing: .14em; font-size: .78rem; color: var(--sun); text-transform: uppercase; }
+.stage h1 { margin: 0; font-size: clamp(1.5rem, 4.5vw, 2rem); font-weight: 800; line-height: 1.25; text-wrap: balance; }
+.stage p { margin: 0; color: var(--stage-muted); font-size: .9rem; }
+.progress { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.bar { flex: 1; min-width: 140px; height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--on-stage) 18%, transparent); overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--sun); border-radius: inherit; transition: width .5s ease; }
+.progress-text { font-family: var(--font-fun); font-weight: 600; font-size: .95rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.progress-text b { color: var(--sun); }
+
+/* ---- 番号えらび ---- */
+.picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.picker button {
+  font-family: var(--font-fun); font-weight: 600; font-size: 1.15rem;
+  min-width: 58px; height: 62px; padding: 4px 12px 2px; line-height: 1.1;
+  border: 2px solid var(--line); border-radius: 14px;
+  background: var(--card); color: var(--ink); cursor: pointer;
+  display: grid; place-items: center;
+  transition: transform .1s;
+}
+.picker button:active { transform: scale(.95); }
+.picker button[aria-pressed="true"] { border-color: var(--brand); background: var(--brand); color: var(--on-brand); }
+.picker .stars { font-size: .7rem; letter-spacing: 1px; color: var(--line); }
+.picker .stars i { font-style: normal; color: var(--sun); }
+.picker button[aria-pressed="true"] .stars { color: color-mix(in srgb, var(--on-brand) 35%, transparent); }
+.picker button.blank { border-style: dashed; color: var(--muted); }
+
+/* ---- 台本カード ---- */
+.sentence-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+  padding: 22px 22px 18px; display: grid; gap: 16px;
+  box-shadow: 0 10px 30px -18px color-mix(in srgb, var(--stage) 45%, transparent);
+}
+.label { font-size: .78rem; color: var(--muted); letter-spacing: .08em; }
+.num-pill {
+  justify-self: start; font-family: var(--font-fun); font-weight: 600; font-size: .85rem; letter-spacing: .06em;
+  background: var(--brand-soft); color: var(--brand); padding: 3px 12px; border-radius: 999px;
+}
+.target {
+  font-family: var(--font-en); font-size: clamp(1.45rem, 4.6vw, 2.15rem);
+  line-height: 1.55; margin: 0; text-wrap: balance; overflow-wrap: anywhere;
+}
+.target.long { font-size: clamp(1.15rem, 3vw, 1.4rem); line-height: 1.85; text-wrap: pretty; }
+.target .t { border-radius: 8px; padding: 0 4px; transition: color .15s, background-color .15s; }
+.target .empty { color: var(--muted); font-family: var(--font-ja); font-size: 1rem; }
+/* お手本再生中：読み上げている単語に青いマーカー */
+.target.speaking .t { color: var(--muted); }
+.target.speaking .t.said { color: var(--ink); }
+.target.speaking .t.model { color: var(--on-brand); background: var(--brand); }
+/* 自分が読んでいる最中：読めた単語は緑、次の単語が赤く光る */
+.target.live .t { color: var(--muted); }
+.target.live .t.heard { color: var(--ok); }
+.target.live .t.now {
+  color: var(--on-miss); background: var(--miss);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--miss) 30%, transparent);
+  animation: glow 1s ease-in-out infinite alternate;
+}
+@keyframes glow { to { box-shadow: 0 0 0 9px color-mix(in srgb, var(--miss) 12%, transparent); } }
+
+.controls { display: grid; gap: 14px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.btn {
+  font: inherit; font-weight: 700; font-size: 1.02rem; border-radius: 999px; cursor: pointer;
+  padding: 12px 22px; min-height: 52px; border: 2px solid var(--brand); background: transparent; color: var(--brand);
+  transition: transform .1s;
+}
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--brand); color: var(--on-brand); }
+.listen-row { justify-content: space-between; }
+.speed { display: grid; gap: 2px; flex: 1 1 220px; min-width: 0; }
+.speed label { font-size: .82rem; color: var(--muted); }
+.speed output { font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
+.speed-track { display: flex; align-items: center; gap: 10px; }
+.speed-track input { flex: 1; min-width: 0; height: 40px; accent-color: var(--brand); touch-action: pan-y; }
+.voice-label { font-size: .82rem; color: var(--muted); }
+.seg { display: inline-flex; border: 2px solid var(--brand); border-radius: 999px; overflow: hidden; }
+.seg button {
+  font: inherit; font-weight: 700; min-width: 80px; height: 46px; padding: 0 18px; cursor: pointer;
+  border: none; background: transparent; color: var(--brand);
+}
+.seg button + button { border-left: 2px solid var(--brand); }
+.seg button[aria-pressed="true"] { background: var(--brand); color: var(--on-brand); }
+.seg button:disabled { opacity: .35; cursor: default; }
+
+/* ---- 録音ボタン ---- */
+.rec-area { display: grid; justify-items: center; gap: 8px; padding: 6px 0 2px; }
+.rec-halo { padding: 10px; border-radius: 50%; background: color-mix(in srgb, var(--sun) 26%, transparent); transition: background .2s; }
+.rec {
+  width: 150px; height: 150px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--sun); color: var(--on-sun);
+  font-family: var(--font-fun); font-weight: 600; font-size: 1.25rem;
+  display: grid; place-items: center;
+  box-shadow: 0 7px 0 color-mix(in srgb, var(--sun) 55%, #5a3b00);
+  transition: transform .08s, background .2s;
+}
+.rec:active { transform: translateY(4px); box-shadow: 0 3px 0 color-mix(in srgb, var(--sun) 55%, #5a3b00); }
+.rec svg { width: 46px; height: 46px; display: block; margin: 0 auto 2px; }
+.rec.listening { background: var(--miss); color: var(--on-miss); box-shadow: 0 7px 0 color-mix(in srgb, var(--miss) 60%, #000); }
+.rec-area.listening .rec-halo { background: color-mix(in srgb, var(--miss) 22%, transparent); animation: halo 1.4s ease-out infinite; }
+@keyframes halo { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--miss) 35%, transparent); } 100% { box-shadow: 0 0 0 22px transparent; } }
+.wave { display: none; gap: 5px; align-items: center; height: 28px; }
+.rec-area.listening .wave { display: flex; }
+.interim:empty, .status:empty { min-height: 0; }
+.wave span { width: 6px; height: 8px; border-radius: 3px; background: var(--miss); }
+.rec-area.listening .wave span { animation: wave .9s ease-in-out infinite; }
+.wave span:nth-child(2) { animation-delay: .15s !important; } .wave span:nth-child(3) { animation-delay: .3s !important; }
+.wave span:nth-child(4) { animation-delay: .45s !important; } .wave span:nth-child(5) { animation-delay: .6s !important; }
+@keyframes wave { 50% { height: 26px; } }
+.status { color: var(--muted); font-size: .92rem; min-height: 1.6em; text-align: center; }
+.interim { font-family: var(--font-en); color: var(--muted); text-align: center; min-height: 1.5em; max-width: 60ch; overflow-wrap: anywhere; }
+
+/* ---- 結果 ---- */
+.result {
+  background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; display: grid; gap: 16px;
+  box-shadow: 0 10px 30px -18px color-mix(in srgb, var(--stage) 45%, transparent);
+  animation: pop .35s ease-out;
+}
+@keyframes pop { from { transform: translateY(8px) scale(.98); opacity: .4; } }
+.score-line { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ring {
+  --p: 0; --c: var(--brand);
+  width: 112px; height: 112px; border-radius: 50%; flex: none;
+  background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--brand-soft) 0);
+  display: grid; place-items: center;
+}
+.ring::before { content: ""; grid-area: 1 / 1; width: 88px; height: 88px; border-radius: 50%; background: var(--card); }
+.score { grid-area: 1 / 1; font-family: var(--font-fun); font-weight: 700; font-size: 2.1rem; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.score small { font-size: .9rem; }
+.verdict { display: grid; gap: 2px; min-width: 0; }
+.praise { font-family: var(--font-fun); font-weight: 700; font-size: 2rem; line-height: 1.1; color: var(--c, var(--brand)); }
+.stars-big { font-size: 1.4rem; letter-spacing: 3px; color: var(--line); }
+.stars-big i { font-style: normal; color: var(--sun); }
+.comment { font-weight: 700; }
+.words { font-family: var(--font-en); font-size: 1.4rem; line-height: 2; overflow-wrap: anywhere; }
+.words.long { font-size: 1.15rem; line-height: 1.9; }
+.w { padding: 2px 4px; border-radius: 6px; }
+.w.ok { color: var(--ok); }
+.w.miss { color: var(--miss); background: var(--miss-soft); text-decoration: underline wavy; text-underline-offset: 5px; }
+.heard { font-family: var(--font-en); color: var(--muted); overflow-wrap: anywhere; }
+.legend { font-size: .82rem; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+.legend b.ok { color: var(--ok); } .legend b.miss { color: var(--miss); }
+.history { font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.notice { background: var(--miss-soft); border-radius: 14px; padding: 14px 16px; font-size: .92rem; }
+.tips { font-size: .85rem; color: var(--muted); }
+.tips ul { margin: 4px 0 0; padding-left: 1.2em; }
+#confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+
+.stage, #unsupported, .picker, .tips, details.teacher { grid-column: 1 / -1; }
+/* 横向きのiPad：左に台本と録音、右に結果 */
+@media (min-width: 900px) and (orientation: landscape) {
+  .wrap { max-width: 1200px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; column-gap: 24px; }
+  .stage { grid-row: 1; } #unsupported { grid-row: 2; } .picker { grid-row: 3; }
+  .wrap:has(#unsupported[hidden]) .stage { margin-bottom: -18px; }
+  .sentence-card { grid-column: 1; grid-row: 4; }
+  .rec-area { grid-column: 1; grid-row: 5; }
+  .result { grid-column: 2; grid-row: 4 / span 2; }
+  .tips { grid-row: 6; }
+  details.teacher { grid-row: 7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---- 先生用 ---- */
+details.teacher { border-top: 1px dashed var(--line); padding-top: 14px; }
+details.teacher summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+.teacher-body { display: grid; gap: 10px; margin-top: 12px; }
+.teacher-body label { font-size: .85rem; font-weight: 700; }
+textarea, input[type=text] {
+  width: 100%; font-family: var(--font-en); font-size: 1rem; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink);
+}
+.t-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.t-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 6px; border-radius: 14px; border: 2px solid transparent; }
+.t-row.current { border-color: var(--brand); background: var(--brand-soft); }
+.t-num {
+  font-family: var(--font-fun); font-weight: 600; font-size: 1rem; min-width: 64px; height: 48px; padding: 0 10px;
+  border-radius: 12px; border: 2px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer;
+}
+.t-row.current .t-num { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.t-in { min-height: 48px; resize: none; overflow: hidden; line-height: 1.5; }
+.t-del {
+  font: inherit; font-size: .85rem; height: 48px; padding: 0 12px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--miss);
+}
+.t-del:disabled { opacity: .35; cursor: default; }
+.share { font-family: var(--font-en); font-size: .82rem; word-break: break-all; white-space: pre-wrap; background: var(--brand-soft); padding: 10px 12px; border-radius: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="stage">
+    <div class="eyebrow">Read Aloud</div>
+    <h1 id="setTitle">音読チェック</h1>
+    <p>声に出して読もう。読めた単語は緑、読めていない単語は赤になります。</p>
+    <div class="progress">
+      <div class="bar" aria-hidden="true"><span id="progressBar"></span></div>
+      <div class="progress-text" id="progressText">★ <b>0</b> / 0</div>
+    </div>
+  </header>
+
+  <div id="unsupported" class="notice" hidden>
+    このブラウザでは音声認識が使えません。iPadのSafariで開き、設定で「Siri」と「音声入力」（設定＞一般＞キーボード）がオンになっているか確認してください。
+  </div>
+
+  <nav class="picker" id="picker" aria-label="英文を選ぶ"></nav>
+
+  <section class="sentence-card" aria-live="polite">
+    <div class="num-pill" id="numLabel">No.1</div>
+    <p class="target" id="target"></p>
+    <div class="controls">
+    <div class="row listen-row">
+      <button class="btn primary" id="listenBtn" type="button">▶ お手本を聞く</button>
+      <div class="row voice-row" role="group" aria-labelledby="voiceLabel">
+        <span id="voiceLabel" class="voice-label">声</span>
+        <div class="seg">
+          <button type="button" id="gFemale" aria-pressed="true">女性</button>
+          <button type="button" id="gMale" aria-pressed="false">男性</button>
+        </div>
+      </div>
+    </div>
+    <div class="speed">
+      <label for="speedSel">速さ <output id="speedOut">0.9倍（ふつう）</output></label>
+      <div class="speed-track">
+        <span aria-hidden="true">🐢</span>
+        <input type="range" id="speedSel" min="0.4" max="1.2" step="0.05" value="0.9">
+        <span aria-hidden="true">🐇</span>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <div class="rec-area" id="recArea">
+    <div class="rec-halo">
+      <button class="rec" id="recBtn" type="button" aria-label="録音する">
+        <span>
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          <span id="recLabel" style="display:block">読む</span>
+        </span>
+      </button>
+    </div>
+    <div class="wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="status" id="status">ボタンを押してから、英文を読んでね。</div>
+    <div class="interim" id="interim"></div>
+  </div>
+
+  <section class="result" id="result" hidden aria-live="polite">
+    <div class="score-line" id="scoreLine">
+      <div class="ring" id="ring"><div class="score" id="score">0<small>%</small></div></div>
+      <div class="verdict">
+        <div class="praise" id="praise"></div>
+        <div class="stars-big" id="starsBig" aria-hidden="true"></div>
+        <div class="comment" id="comment"></div>
+      </div>
+    </div>
+    <div class="words" id="words"></div>
+    <div class="legend"><span><b class="ok">緑</b>＝読めた</span><span><b class="miss">赤</b>＝読めていない・読み飛ばし</span></div>
+    <div>
+      <div class="label">あなたの読んだ英語</div>
+      <div class="heard" id="heard"></div>
+    </div>
+    <div class="history" id="history"></div>
+    <div class="row">
+      <button class="btn" id="retryBtn" type="button">もう一度</button>
+      <button class="btn" id="nextBtn" type="button">次の英文へ →</button>
+    </div>
+  </section>
+
+  <div class="tips">
+    うまくいかないときは
+    <ul>
+      <li>静かな場所で、iPadから30cmくらい離れて、はっきり読もう。</li>
+      <li>読み終わったら「とめる」を押すと、結果が出ます。</li>
+      <li>お手本の音が小さいときは、iPadの横の音量ボタンで上げよう。</li>
+      <li>アクセントやイントネーションも、お手本をよく聞いてまねしよう。</li>
+    </ul>
+  </div>
+
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <details class="teacher" hidden>
+    <summary>先生用：英文を入れ替える</summary>
+    <div class="teacher-body">
+      <label for="tTitle">セットの名前</label>
+      <input type="text" id="tTitle" placeholder="例：Unit 5 音読">
+      <div class="label">英文（番号は上の No. と同じです。番号を押すと、その英文に切り替わります）</div>
+      <ol class="t-list" id="tList"></ol>
+      <div class="row">
+        <button class="btn" id="addBtn" type="button">＋ 英文を追加</button>
+        <button class="btn" id="linkBtn" type="button">生徒用リンクを作る</button>
+      </div>
+      <div class="tips">入力した英文は、上の練習画面にすぐ反映されます。何行かまとめて貼り付けると、1行ずつに分かれます。</div>
+      <div class="share" id="shareOut" hidden></div>
+      <div class="tips">リンクには英文が含まれています。このページのURLに続けて作られるので、ページをWebに公開してから作成してください。</div>
+    </div>
+  </details>
+</div>
+
+<script>
+// ===== 初期の英文（先生がここを書き換えてもOK） =====
+const DEFAULT_SET = {
+  title: (typeof ONDOKU_TITLE === "string" && ONDOKU_TITLE) || "音読チェック",
+  sentences: (Array.isArray(window.ONDOKU_SENTENCES) && ONDOKU_SENTENCES.length) ? ONDOKU_SENTENCES.map(String) : ["Hello."]
+};
+
+// ===== データ読み込み（?s= のリンクがあればそちらを優先） =====
+function encodeSet(set) {
+  const json = JSON.stringify(set);
+  return btoa(unescape(encodeURIComponent(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function decodeSet(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (str.length % 4) str += "=";
+  return JSON.parse(decodeURIComponent(escape(atob(str))));
+}
+let SET = DEFAULT_SET;
+try {
+  const s = new URLSearchParams(location.search).get("s");
+  if (s) {
+    const parsed = decodeSet(s);
+    if (parsed && Array.isArray(parsed.sentences) && parsed.sentences.length) SET = parsed;
+  }
+} catch (e) { /* 壊れたリンクは初期セットで動かす */ }
+
+// ===== 単語の正規化 =====
+const CONTRACTIONS = {
+  "i'm":"i am","you're":"you are","we're":"we are","they're":"they are","he's":"he is","she's":"she is",
+  "it's":"it is","that's":"that is","there's":"there is","what's":"what is","who's":"who is","where's":"where is",
+  "i've":"i have","you've":"you have","we've":"we have","they've":"they have","i'll":"i will","you'll":"you will",
+  "we'll":"we will","they'll":"they will","he'll":"he will","she'll":"she will","it'll":"it will",
+  "i'd":"i would","you'd":"you would","don't":"do not","doesn't":"does not","didn't":"did not",
+  "isn't":"is not","aren't":"are not","wasn't":"was not","weren't":"were not","can't":"can not","cannot":"can not",
+  "won't":"will not","haven't":"have not","hasn't":"has not","hadn't":"had not","couldn't":"could not",
+  "wouldn't":"would not","shouldn't":"should not","let's":"let us"
+};
+const NUMS = ["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve",
+  "thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen","twenty"];
+function normWords(text) {
+  const out = [];
+  text.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9'\s-]/g, " ").replace(/-/g, " ")
+    .split(/\s+/).filter(Boolean).forEach(w => {
+      w = w.replace(/^'+|'+$/g, "");
+      if (!w) return;
+      if (/^\d+$/.test(w) && +w <= 20) w = NUMS[+w];
+      if (w === "ok") w = "okay";
+      (CONTRACTIONS[w] || w).split(" ").forEach(x => out.push(x));
+    });
+  return out;
+}
+// 表示用：元の単語と、正規化した単語の対応
+function displayTokens(text) {
+  return text.split(/\s+/).filter(Boolean).map(raw => ({ raw, norm: normWords(raw) }));
+}
+
+// ===== 比較（最長共通部分列） =====
+function lcsMatch(a, b) {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const hit = new Array(n).fill(false);
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { hit[i] = true; i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++;
+  }
+  return { hit, count: dp[0][0] };
+}
+function evaluate(target, heard) {
+  const toks = displayTokens(target);
+  const flat = []; toks.forEach((t, ti) => t.norm.forEach(w => flat.push({ w, ti })));
+  const { hit } = lcsMatch(flat.map(f => f.w), normWords(heard));
+  const tokOk = toks.map(() => true);
+  flat.forEach((f, k) => { if (!hit[k]) tokOk[f.ti] = false; });
+  const okCount = tokOk.filter(Boolean).length;
+  return { toks, tokOk, score: toks.length ? Math.round(okCount / toks.length * 100) : 0 };
+}
+
+// ===== 画面 =====
+const $ = id => document.getElementById(id);
+let current = 0;
+const best = {};   // 各文の最高点
+const tries = {};  // 各文の点数の記録
+
+document.title = SET.title || "音読チェック";
+$("setTitle").textContent = SET.title || "音読チェック";
+
+// 星の数：60%以上で★1、80%以上で★2、100%で★3
+const starCount = n => n == null ? 0 : n >= 100 ? 3 : n >= 80 ? 2 : n >= 60 ? 1 : 0;
+const starHTML = n => { const k = starCount(n); return "<i>" + "★".repeat(k) + "</i>" + "★".repeat(3 - k); };
+function updateProgress() {
+  const total = SET.sentences.filter(x => x.trim()).length * 3;
+  let got = 0; SET.sentences.forEach((x, i) => { if (x.trim()) got += starCount(best[i]); });
+  $("progressBar").style.width = (total ? got / total * 100 : 0) + "%";
+  $("progressText").innerHTML = "★ <b>" + got + "</b> / " + total;
+}
+function renderPicker() {
+  const p = $("picker"); p.innerHTML = "";
+  SET.sentences.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-pressed", i === current ? "true" : "false");
+    b.setAttribute("aria-label", "No." + (i + 1));
+    b.innerHTML = '<span>' + (i + 1) + '</span><span class="stars">' + starHTML(best[i]) + '</span>';
+    if (!s.trim()) b.classList.add("blank");
+    b.onclick = () => { select(i); };
+    p.appendChild(b);
+  });
+  updateProgress();
+}
+// 英文を単語ごとの<span>にして表示（読んでいる場所を光らせるため）
+function renderTarget() {
+  const el = $("target"); el.innerHTML = "";
+  if (!SET.sentences[current].trim()) { el.innerHTML = '<span class="empty">（まだ英文が入っていません）</span>'; return; }
+  el.classList.toggle("long", wordCount(SET.sentences[current]) > 25);
+  const re = /\S+/g; let m;
+  while ((m = re.exec(SET.sentences[current]))) {
+    const s = document.createElement("span");
+    s.className = "t"; s.textContent = m[0];
+    s.dataset.start = m.index; s.dataset.end = m.index + m[0].length;
+    el.append(s, " ");
+  }
+}
+// 読んでいる途中：聞き取れた単語を緑に、次に読む単語を赤く光らせる
+function liveHighlight(heard) {
+  const el = $("target");
+  const spans = el.querySelectorAll(".t");
+  el.classList.add("live");
+  const { tokOk } = evaluate(SET.sentences[current], heard || "");
+  let last = -1;
+  tokOk.forEach((ok, i) => { if (ok && heard) last = i; });
+  spans.forEach((s, i) => {
+    s.classList.toggle("heard", !!heard && tokOk[i] && i <= last);
+    s.classList.toggle("now", i === last + 1);
+  });
+}
+function clearHighlight() {
+  const el = $("target");
+  el.classList.remove("live");
+  el.querySelectorAll(".t").forEach(s => s.classList.remove("heard", "now"));
+}
+
+function select(i) {
+  if (listening) { discard = true; stopRec(); }
+  stopSpeak();
+  current = i;
+  $("numLabel").textContent = "No." + (i + 1) + " / " + SET.sentences.length;
+  renderTarget();
+  $("result").hidden = true;
+  $("interim").textContent = "";
+  $("status").textContent = "ボタンを押してから、英文を読んでね。";
+  renderPicker();
+  markTeacherCurrent();
+}
+
+// ===== お手本読み上げ =====
+// --- 声の選び方：アメリカ英語の「女性」か「男性」の2択。それぞれ高品質で聞き取りやすい声を優先 ---
+const HAS_TTS = "speechSynthesis" in window;
+const FEMALE = /Samantha|Ava|Allison|Susan|Zoe|Nicky|Joelle|Noelle|Kathy|Female|Aria|Jenny|Michelle|Emma|Ana\b/i;
+const MALE = /Alex|Aaron|Evan|Nathan|Tom|Fred|Male|Guy|Davis|Tony|Andrew|Brian|Christopher|Eric|Roger|Jason|Steffan/i;
+const CLEAR_F = /Samantha|Ava|Allison|Susan|Zoe/i;
+const CLEAR_M = /Alex|Aaron|Evan|Nathan|Tom/i;
+const QUALITY = v => /premium|プレミアム/i.test(v.name) ? 3 : /enhanced|拡張|natural|neural/i.test(v.name) ? 2 : 0;
+const NOVELTY = /Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox|Junior|Ralph|Grandma|Grandpa|Eddy|Flo|Reed|Rocko|Sandy|Shelley/i;
+let voices = { female: null, male: null };
+let gender = (() => { try { return localStorage.getItem("ondoku-gender") === "male" ? "male" : "female"; } catch (e) { return "female"; } })();
+function bestOf(list, clear) {
+  return list.sort((a, b) => (QUALITY(b) - QUALITY(a)) || (clear.test(b.name) - clear.test(a.name)) || (b.localService - a.localService))[0] || null;
+}
+function loadVoices() {
+  if (!HAS_TTS) return;
+  const us = speechSynthesis.getVoices().filter(v => /^en[-_]US/i.test(v.lang) && !NOVELTY.test(v.name));
+  voices.female = bestOf(us.filter(v => FEMALE.test(v.name)), CLEAR_F);
+  voices.male = bestOf(us.filter(v => MALE.test(v.name) && !FEMALE.test(v.name)), CLEAR_M);
+  $("gMale").disabled = !voices.male;
+  $("gMale").title = voices.male ? "" : "このiPadには男性の声が入っていません";
+  if (!voices.male && gender === "male") gender = "female";
+  showGender();
+}
+function showGender() {
+  $("gFemale").setAttribute("aria-pressed", gender === "female");
+  $("gMale").setAttribute("aria-pressed", gender === "male");
+}
+function setGender(g) {
+  gender = g; showGender();
+  try { localStorage.setItem("ondoku-gender", g); } catch (e) {}
+  speak(speed());
+}
+$("gFemale").onclick = () => setGender("female");
+$("gMale").onclick = () => setGender("male");
+showGender();
+if (HAS_TTS) {
+  loadVoices();
+  speechSynthesis.addEventListener ? speechSynthesis.addEventListener("voiceschanged", loadVoices) : (speechSynthesis.onvoiceschanged = loadVoices);
+}
+
+// --- お手本の再生と、読んでいる単語のハイライト ---
+let fallbackTimer = null, gotBoundary = false;
+function modelHighlight(charIndex) {
+  const spans = [...$("target").querySelectorAll(".t")];
+  let idx = spans.findIndex(s => charIndex < +s.dataset.end);
+  if (idx < 0) idx = spans.length - 1;
+  spans.forEach((s, i) => { s.classList.toggle("said", i < idx); s.classList.toggle("model", i === idx); });
+}
+function clearModel() {
+  clearTimeout(fallbackTimer); fallbackTimer = null;
+  $("target").classList.remove("speaking");
+  $("target").querySelectorAll(".t").forEach(s => s.classList.remove("said", "model"));
+}
+function stopSpeak() { if (HAS_TTS) speechSynthesis.cancel(); clearModel(); }
+// 単語の区切りを教えてくれない声のときは、単語の長さから時間を見積もって進める
+function runFallback(rate) {
+  const spans = [...$("target").querySelectorAll(".t")];
+  let i = 0;
+  const step = () => {
+    if (gotBoundary || i >= spans.length) return;
+    modelHighlight(+spans[i].dataset.start);
+    const w = spans[i].textContent.replace(/[^A-Za-z0-9']/g, "");
+    const pause = /[,.!?]$/.test(spans[i].textContent) ? 220 : 0;
+    i++;
+    fallbackTimer = setTimeout(step, (180 + w.length * 55) / rate + pause);
+  };
+  step();
+}
+function speak(rate) {
+  if (!HAS_TTS) { $("status").textContent = "このブラウザは読み上げに対応していません。"; return; }
+  if (listening) { discard = true; stopRec(); }
+  stopSpeak();
+  const text = SET.sentences[current];
+  const u = new SpeechSynthesisUtterance(text);
+  const v = voices[gender] || voices.female || voices.male;
+  u.lang = "en-US";
+  if (v) u.voice = v;
+  u.rate = rate; u.volume = 1;
+  gotBoundary = false;
+  u.onstart = () => {
+    $("target").classList.add("speaking");
+    modelHighlight(0);
+    fallbackTimer = setTimeout(() => { if (!gotBoundary) runFallback(rate); }, 450);
+  };
+  u.onboundary = e => {
+    if (e.name && e.name !== "word") return;
+    gotBoundary = true; clearTimeout(fallbackTimer);
+    modelHighlight(e.charIndex);
+  };
+  u.onend = u.onerror = () => clearModel();
+  // 録音の直後は音が小さくなることがあるので、少し間をあけて再生
+  setTimeout(() => speechSynthesis.speak(u), 250);
+}
+// --- 速さのスライダー ---
+const speed = () => parseFloat($("speedSel").value);
+function showSpeed() {
+  const r = speed();
+  const word = r <= 0.55 ? "とてもゆっくり" : r <= 0.75 ? "ゆっくり" : r <= 1.0 ? "ふつう" : "はやい";
+  $("speedOut").textContent = r.toFixed(2).replace(/0$/, "") + "倍（" + word + "）";
+}
+try { const s = localStorage.getItem("ondoku-speed"); if (s) $("speedSel").value = s; } catch (e) {}
+showSpeed();
+$("speedSel").oninput = showSpeed;
+$("speedSel").onchange = () => { try { localStorage.setItem("ondoku-speed", $("speedSel").value); } catch (e) {} speak(speed()); };
+$("listenBtn").onclick = () => speak(speed());
+
+// ===== 音声認識（作り直し版） =====
+// ・「読む」で録音開始、「とめる」で終了して採点（自動では止めない）
+// ・マイクが実際に動き出したかを確認し、動かなければ理由を表示する
+// ・iPadが途中で勝手に止めた場合は、それまでの分を残して自動で聞き直す
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const MAX_MS = 180000;      // 押し忘れたときの安全装置（3分）
+const START_WAIT_MS = 4000; // マイクが動き出すのを待つ時間
+let rec = null, listening = false, finalText = "", alts = [];
+let discard = false, userStopped = false, gotError = false, micReady = false;
+let carry = "", lastText = "", startedAt = 0, micOpenedAt = 0, quickRestarts = 0;
+let maxTimer = null, startTimer = null;
+const wordCount = t => (t.match(/\S+/g) || []).length;
+const fullText = () => (carry + " " + lastText).replace(/\s+/g, " ").trim();
+function clearTimers() { clearTimeout(maxTimer); clearTimeout(startTimer); maxTimer = startTimer = null; }
+
+// 使えない環境なら、最初に理由を表示しておく
+function showBlocker(msg) { $("unsupported").textContent = msg; $("unsupported").hidden = false; }
+if (!SR) {
+  showBlocker("このブラウザでは音声認識が使えません。iPadのSafariで開き、設定で「Siri」と「音声入力」（設定＞一般＞キーボード）がオンになっているか確認してください。");
+  $("recBtn").disabled = true; $("recBtn").style.opacity = .4;
+} else if (!window.isSecureContext) {
+  showBlocker("このページはファイルとして開かれているため、録音できません。https:// で始まるURL（GitHub Pages など）から開いてください。");
+}
+
+const ERROR_MSG = {
+  "not-allowed": "マイクが許可されていません。設定＞Safari＞マイク を「許可」にして、ページを開き直してください。",
+  "service-not-allowed": "音声認識が使えません。設定で「Siri」と「音声入力」（設定＞一般＞キーボード）をオンにしてください。学校の管理設定で止められている場合もあります。",
+  "audio-capture": "マイクが見つかりません。ほかのアプリがマイクを使っていないか確認してください。",
+  "network": "インターネットに接続できません。Wi-Fiを確認してください。",
+  "language-not-supported": "英語の音声認識が使えません。設定＞一般＞キーボード＞音声入力の言語 に英語があるか確認してください。"
+};
+
+const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+const FRAME_MSG = "今の開き方では、マイクが使えません。ファイルを直接開いたり、ほかのページの中に入れたりすると、マイクが止められます。https:// で始まるURL（GitHub Pages など）からSafariで開いてください。お手本を聞く・英文を見る機能は使えます。";
+function startRec() {
+  if (!SR || listening) return;
+  if (!SET.sentences[current].trim()) { $("status").textContent = "この番号にはまだ英文が入っていません。"; return; }
+  stopSpeak();
+  carry = ""; lastText = ""; finalText = "";
+  userStopped = false; gotError = false; micReady = false; quickRestarts = 0;
+  startedAt = Date.now();
+  setListening(true);
+  $("status").textContent = "マイクを準備しています…";
+  maxTimer = setTimeout(stopRec, MAX_MS);
+  startTimer = setTimeout(() => {
+    if (listening && !micReady) {
+      gotError = true;
+      $("status").textContent = IN_FRAME ? FRAME_MSG : "マイクが動きませんでした。もう一度「読む」を押してください。続くときは、マイクの許可とSiri・音声入力の設定を確認してください。";
+      abortRec();
+    }
+  }, START_WAIT_MS);
+  openMic();   // ボタンを押した流れのまま、すぐに開始する（iPadではこれが大事）
+}
+
+function markReady() {
+  if (micReady) return;
+  micReady = true; clearTimeout(startTimer);
+  $("status").textContent = "聞いています… 読み終わったら「とめる」を押してね。";
+}
+
+function openMic() {
+  const r = new SR();
+  rec = r;
+  r.lang = "en-US";
+  r.interimResults = true;
+  r.maxAlternatives = 1;
+  r.continuous = !IS_IOS;  // iPadは1区切りずつ聞いて、こちらでつなげる方が安定する
+  lastText = ""; finalText = ""; micOpenedAt = Date.now();
+
+  r.onstart = markReady;
+  r.onaudiostart = markReady;
+  r.onresult = e => {
+    if (rec !== r) return;
+    markReady();
+    let fin = "", interim = "";
+    for (let i = 0; i < e.results.length; i++) {
+      const res = e.results[i];
+      if (res.isFinal) fin += " " + res[0].transcript; else interim += " " + res[0].transcript;
+    }
+    finalText = fin.trim();
+    const now = (fin + " " + interim).replace(/\s+/g, " ").trim();
+    if (now) lastText = now;
+    const heard = fullText();
+    $("interim").textContent = heard;
+    liveHighlight(heard);
+  };
+  r.onerror = e => {
+    if (rec !== r) return;
+    if (e.error === "no-speech" || e.error === "aborted") return;  // 黙っているだけなら続ける
+    gotError = true;
+    const blocked = e.error === "not-allowed" || e.error === "service-not-allowed";
+    $("status").textContent = (IN_FRAME && blocked ? FRAME_MSG : (ERROR_MSG[e.error] || "うまく聞き取れませんでした。もう一度やってみよう。")) + "（" + e.error + "）";
+  };
+  r.onend = () => {
+    if (rec !== r || !listening) return;
+    // 「とめる」を押す前に止まったら、続きから聞き直す（すぐ止まるのが続くときはあきらめる）
+    quickRestarts = Date.now() - micOpenedAt < 1000 ? quickRestarts + 1 : 0;
+    if (!userStopped && !discard && !gotError && quickRestarts < 5 && Date.now() - startedAt < MAX_MS - 1000) {
+      carry = fullText(); lastText = "";
+      try { openMic(); return; } catch (err) { /* 聞き直せなければここまでで採点 */ }
+    }
+    finish();
+  };
+
+  try { r.start(); }
+  catch (err) {
+    gotError = true;
+    $("status").textContent = "マイクを起動できませんでした。もう一度「読む」を押してください。（" + (err.name || "error") + "）";
+    finish();
+  }
+}
+
+function finish() {
+  if (!listening) return;
+  clearTimers();
+  setListening(false);
+  if (discard) { discard = false; return; }
+  const heard = fullText();
+  if (heard) showResult(heard);
+  else if (!gotError) $("status").textContent = "声が聞こえませんでした。「読む」を押してから、大きな声で読んでみよう。";
+}
+function stopRec() {
+  userStopped = true;
+  clearTimers();
+  const r = rec;
+  if (!r) { finish(); return; }
+  try { r.stop(); } catch (e) {}
+  // 止まらないときは、少し待って強制終了
+  setTimeout(() => { if (listening && rec === r) { try { r.abort(); } catch (e) {} finish(); } }, 1500);
+}
+function abortRec() {
+  userStopped = true;
+  clearTimers();
+  const r = rec;
+  try { r && r.abort(); } catch (e) {}
+  setTimeout(() => { if (listening && rec === r) finish(); }, 300);
+}
+function setListening(on) {
+  listening = on;
+  $("recBtn").classList.toggle("listening", on);
+  $("recArea").classList.toggle("listening", on);
+  $("recLabel").textContent = on ? "とめる" : "読む";
+  $("recBtn").setAttribute("aria-label", on ? "録音をとめる" : "録音する");
+  if (on) liveHighlight(""); else clearHighlight();
+  if (on) { $("status").textContent = "聞いています… 読み終わったら「とめる」を押してね。";$("interim").textContent = ""; $("result").hidden = true; }
+}
+$("recBtn").onclick = () => listening ? stopRec() : startRec();
+
+// スコアの輪を0から伸ばす
+function animateRing(to) {
+  const ring = $("ring");
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { ring.style.setProperty("--p", to); return; }
+  const t0 = performance.now(), dur = 700;
+  const tick = now => {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    ring.style.setProperty("--p", (to * e).toFixed(1));
+    if (k < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+// 100%のときの紙吹雪
+function confetti() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const cv = $("confetti"), ctx = cv.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const colors = ["--sun", "--brand", "--ok", "--miss"].map(v => css.getPropertyValue(v).trim());
+  const ps = Array.from({ length: 120 }, () => ({
+    x: innerWidth / 2 + (Math.random() - .5) * 120, y: innerHeight * .45,
+    vx: (Math.random() - .5) * 12, vy: -Math.random() * 13 - 4,
+    w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, r: Math.random() * 6, vr: (Math.random() - .5) * .4,
+    c: colors[Math.floor(Math.random() * colors.length)]
+  }));
+  const t0 = performance.now();
+  const frame = now => {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    ps.forEach(p => {
+      p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+    });
+    if (now - t0 < 2600) requestAnimationFrame(frame); else ctx.clearRect(0, 0, innerWidth, innerHeight);
+  };
+  requestAnimationFrame(frame);
+}
+
+function showResult(heard) {
+  const target = SET.sentences[current];
+  // 厳しめに判定するため、いちばん確からしい聞き取り結果だけで採点する（ほかの候補で救済しない）
+  const bestRes = evaluate(target, heard), bestHeard = heard;
+
+  const { toks, tokOk, score } = bestRes;
+  $("score").innerHTML = score + "<small>%</small>";
+  const color = score >= 80 ? "var(--ok)" : score >= 50 ? "var(--brand)" : "var(--miss)";
+  $("scoreLine").style.setProperty("--c", color);
+  $("ring").style.setProperty("--c", color);
+  animateRing(score);
+  $("praise").textContent = score === 100 ? "Perfect!" : score >= 80 ? "Great!" : score >= 60 ? "Good!" : score >= 40 ? "Nice try!" : "Let's try again!";
+  $("starsBig").innerHTML = starHTML(score);
+  if (score === 100) confetti();
+  $("comment").textContent =
+    score === 100 ? "パーフェクト！正しく読めています。" :
+    score >= 80 ? "よく読めています！赤い単語だけ練習しよう。" :
+    score >= 50 ? "あと少し。お手本を聞いて、赤い単語をまねしよう。" :
+    "ゆっくり、はっきり読んでみよう。";
+  $("words").innerHTML = "";
+  $("words").classList.toggle("long", toks.length > 25);
+  toks.forEach((t, i) => {
+    const s = document.createElement("span");
+    s.className = "w " + (tokOk[i] ? "ok" : "miss");
+    s.textContent = t.raw;
+    $("words").append(s, " ");
+  });
+  $("heard").textContent = bestHeard.trim();
+  (tries[current] = tries[current] || []).push(score);
+  best[current] = Math.max(best[current] || 0, score);
+  $("history").textContent = "この文の記録：" + tries[current].map(n => n + "%").join(" → ");
+  $("status").textContent = "";
+  $("result").hidden = false;
+  $("nextBtn").hidden = current >= SET.sentences.length - 1;
+  renderPicker();
+}
+$("retryBtn").onclick = startRec;
+$("nextBtn").onclick = () => select(Math.min(current + 1, SET.sentences.length - 1));
+
+// ===== 先生用 =====
+SET = { title: SET.title, sentences: SET.sentences.slice() };
+$("tTitle").value = SET.title || "";
+$("tTitle").oninput = () => {
+  SET.title = $("tTitle").value.trim() || "音読チェック";
+  document.title = SET.title; $("setTitle").textContent = SET.title;
+};
+function resetScores() { Object.keys(best).forEach(k => delete best[k]); Object.keys(tries).forEach(k => delete tries[k]); }
+
+// 英文の一覧（No.n と入力欄）を作る
+function renderTeacher(focusIndex) {
+  const list = $("tList"); list.innerHTML = "";
+  SET.sentences.forEach((text, i) => {
+    const li = document.createElement("li");
+    li.className = "t-row" + (i === current ? " current" : "");
+
+    const num = document.createElement("button");
+    num.type = "button"; num.className = "t-num"; num.textContent = "No." + (i + 1);
+    num.setAttribute("aria-label", "No." + (i + 1) + " を練習画面に表示");
+    num.onclick = () => { select(i); window.scrollTo({ top: 0, behavior: "smooth" }); };
+
+    const inp = document.createElement("textarea");
+    inp.rows = 1; inp.className = "t-in"; inp.id = "tIn" + i;
+    inp.value = text; inp.placeholder = "英文を入力";
+    inp.setAttribute("aria-label", "No." + (i + 1) + " の英文");
+    inp.setAttribute("autocapitalize", "sentences"); inp.setAttribute("spellcheck", "true");
+    inp.onfocus = () => { if (current !== i) select(i); };
+    const grow = () => { inp.style.height = "auto"; inp.style.height = inp.scrollHeight + 2 + "px"; };
+    requestAnimationFrame(grow);
+    inp.oninput = () => {
+      grow();
+      SET.sentences[i] = inp.value.replace(/\s*\n\s*/g, " ");
+      delete best[i]; delete tries[i];
+      if (current === i) { renderTarget(); $("result").hidden = true; }
+      renderPicker();
+    };
+    inp.onkeydown = e => {
+      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); insertRows(i + 1, [""]); }
+    };
+    inp.onpaste = e => {
+      const t = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+      const lines = t.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length < 2) return;
+      e.preventDefault();
+      if (!inp.value.trim()) { SET.sentences[i] = lines.shift(); insertRows(i + 1, lines, i); }
+      else insertRows(i + 1, lines);
+    };
+
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "t-del"; del.textContent = "削除";
+    del.setAttribute("aria-label", "No." + (i + 1) + " を削除");
+    del.disabled = SET.sentences.length <= 1;
+    del.onclick = () => {
+      SET.sentences.splice(i, 1); resetScores();
+      const next = Math.min(i, SET.sentences.length - 1);
+      current = next; renderTeacher(); select(next);
+    };
+
+    li.append(num, inp, del);
+    list.appendChild(li);
+  });
+  if (focusIndex != null) { const f = $("tIn" + focusIndex); if (f) f.focus(); }
+}
+// 指定の位置に英文を差し込む（番号は自動で振り直し）
+function insertRows(at, lines, focusAt) {
+  SET.sentences.splice(at, 0, ...lines); resetScores();
+  const target = focusAt != null ? focusAt : at + lines.length - 1;
+  current = target; renderTeacher(target); select(target);
+}
+// 練習画面の No. が変わったら、先生用の一覧の色も合わせる
+function markTeacherCurrent() {
+  document.querySelectorAll("#tList .t-row").forEach((li, i) => li.classList.toggle("current", i === current));
+}
+$("addBtn").onclick = () => insertRows(SET.sentences.length, [""]);
+
+function readTeacherSet() {
+  const sentences = SET.sentences.map(s => s.trim()).filter(Boolean);
+  if (!sentences.length) { $("shareOut").hidden = false; $("shareOut").textContent = "英文を1つ以上入れてください。"; return null; }
+  return { title: $("tTitle").value.trim() || "音読チェック", sentences };
+}
+renderTeacher();
+$("linkBtn").onclick = async () => {
+  const set = readTeacherSet(); if (!set) return;
+  const url = location.origin + location.pathname + "?s=" + encodeSet(set);
+  const out = $("shareOut"); out.hidden = false;
+  const note = set.sentences.length < SET.sentences.length ? "※空の番号は飛ばしたので、生徒の画面では番号が詰まります。\n" : "";
+  out.textContent = note + url;
+  try { await navigator.clipboard.writeText(url); out.textContent = note + "コピーしました：\n" + url; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents(out); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+};
+
+// ===== スプレッドシートから英文を読み込む =====
+function applySet(set) {
+  SET = { title: set.title || "音読チェック", sentences: set.sentences.slice() };
+  resetScores(); current = 0;
+  $("tTitle").value = SET.title;
+  document.title = SET.title; $("setTitle").textContent = SET.title;
+  renderTeacher(); select(0);
+}
+function loadSheet() {
+  const url = (typeof ONDOKU_SHEET_URL === "string" ? ONDOKU_SHEET_URL : "").trim();
+  const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) { select(0); return; }   // URLが入っていなければ、コードの中の英文を使う
+  const gid = (url.match(/[#&?]gid=(\d+)/) || [])[1];
+  $("target").innerHTML = '<span class="empty">英文を読み込んでいます…</span>';
+  let done = false;
+  const fail = msg => {
+    if (done) return; done = true;
+    select(0);
+    $("status").textContent = msg;
+  };
+  // Googleの「gviz」形式で読み込む（スクリプトとして読み込むので、ブラウザの制限を受けにくい）
+  window.__ondokuSheet = res => {
+    if (done) return;
+    try {
+      if (res.status === "error") throw new Error("sheet");
+      const rows = (res.table && res.table.rows) || [];
+      const cell = r => { const c = r && r.c && r.c[0]; return c ? String(c.v != null ? c.v : (c.f || "")).trim() : ""; };
+      const title = cell(rows[0]);
+      const sentences = rows.slice(1).map(cell).filter(Boolean);
+      if (!sentences.length) throw new Error("empty");
+      done = true;
+      applySet({ title, sentences });
+    } catch (e) {
+      fail("スプレッドシートに英文が見つかりませんでした。A1にセットの名前、A2から下に英文を入れてください。");
+    }
+  };
+  const sc = document.createElement("script");
+  sc.src = "https://docs.google.com/spreadsheets/d/" + m[1] + "/gviz/tq?tqx=out:json;responseHandler:__ondokuSheet&headers=0"
+    + (gid ? "&gid=" + gid : "") + "&_=" + Date.now();
+  sc.onerror = () => fail("スプレッドシートを読み込めませんでした。共有が「リンクを知っている全員（閲覧者）」になっているか確認してください。");
+  setTimeout(() => fail("スプレッドシートを読み込めませんでした。インターネット接続と、共有の設定を確認してください。"), 10000);
+  document.head.appendChild(sc);
+}
+loadSheet();
+</script>
+</body>
+</html>
